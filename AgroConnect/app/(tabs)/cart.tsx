@@ -61,7 +61,7 @@ export default function Cart() {
 
   const fetchCart = async () => {
     try {
-      const response = await axios.post('http://192.168.43.112:3500/user/getcart', {
+      const response = await axios.post('http://192.168.0.102:3500/user/getcart', {
         userId: "67c47725b322f61f7b759d9e"
       });
       setCart(response.data);
@@ -74,7 +74,7 @@ export default function Cart() {
 
   const handleUpdateQuantity = async (productId: string, action: 'increase' | 'decrease') => {
     try {
-      const response = await axios.post('http://192.168.43.112:3500/user/addquantity', {
+      const response = await axios.post('http://192.168.0.102:3500/user/addquantity', {
         userId: "67c47725b322f61f7b759d9e",
         productId,
         action
@@ -91,7 +91,7 @@ export default function Cart() {
   const handlePayment = async () => {
     try {
       // Create order
-      const orderResponse = await axios.post('http://192.168.43.112:3500/payment/create-order', {
+      const orderResponse = await axios.post('http://192.168.0.102:3500/payment/create-order', {
         amount: total,
         currency: 'INR'
       });
@@ -137,7 +137,7 @@ export default function Cart() {
       setIsLoading(true);
 
       // Verify payment
-      const verificationResponse = await axios.post('http://192.168.43.112:3500/payment/verify-payment', {
+      const verificationResponse = await axios.post('http://192.168.0.102:3500/payment/verify-payment', {
         razorpay_order_id: response.razorpay_order_id,
         razorpay_payment_id: response.razorpay_payment_id,
         razorpay_signature: response.razorpay_signature
@@ -157,7 +157,7 @@ export default function Cart() {
         };
 
         // Create order using the order endpoint
-        const orderResponse = await axios.post('http://192.168.43.112:3500/user/create', orderData);
+        const orderResponse = await axios.post('http://192.168.0.102:3500/user/create', orderData);
 
         if (orderResponse.data.order) {
           Alert.alert('Success', 'Payment successful and order created!');

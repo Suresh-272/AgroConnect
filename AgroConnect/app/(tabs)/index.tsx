@@ -3,7 +3,6 @@ import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, TextInput,
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface Product {
   _id: string;
@@ -14,27 +13,15 @@ interface Product {
   category: string;
 }
 
+interface PredictionResponse {
+  current_price: number;
+}
+
 const categories = [
-  {
-    id: 1,
-    name: 'Fresh Produce',
-    image: 'https://images.unsplash.com/photo-1518843875459-f738682238a6?q=80&w=300&auto=format&fit=crop',
-  },
-  {
-    id: 2,
-    name: 'Grains',
-    image: 'https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?q=80&w=300&auto=format&fit=crop',
-  },
-  {
-    id: 3,
-    name: 'Dairy',
-    image: 'https://images.unsplash.com/photo-1628088062854-d1870b4553da?q=80&w=300&auto=format&fit=crop',
-  },
-  {
-    id: 4,
-    name: 'Livestock',
-    image: 'https://images.unsplash.com/photo-1570042225831-d98fa7577f1e?q=80&w=300&auto=format&fit=crop',
-  },
+  { id: 1, name: 'Fresh Produce', image: 'https://images.unsplash.com/photo-1518843875459-f738682238a6?q=80&w=300&auto=format&fit=crop' },
+  { id: 2, name: 'Grains', image: 'https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?q=80&w=300&auto=format&fit=crop' },
+  { id: 3, name: 'Dairy', image: 'https://images.unsplash.com/photo-1628088062854-d1870b4553da?q=80&w=300&auto=format&fit=crop' },
+  { id: 4, name: 'Livestock', image: 'https://images.unsplash.com/photo-1570042225831-d98fa7577f1e?q=80&w=300&auto=format&fit=crop' },
 ];
 
 export default function Shop() {
@@ -43,45 +30,62 @@ export default function Shop() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('All');
+  const [priceMap, setPriceMap] = useState<Record<string, number>>({});
+
+  const fetchPredictedPrice = async (commodityName: string) => {
+    try {
+      const response = await axios.get<PredictionResponse>(`http://192.168.0.102:5000/api/commodity/${commodityName.toLowerCase()}`);
+      return response.data.current_price;
+    } catch (error) {
+      console.error(`Error fetching prediction for ${commodityName}:`, error);
+      return null;
+    }
+  };
 
   useEffect(() => {
-    const getUserIdAndProducts = async () => {
+    const getProductsWithPredictions = async () => {
       try {
-        const response = await axios.get('http://192.168.43.112:3500/user/getprods');
-        setProducts(response.data);
-        setFilteredProducts(response.data);
-        console.log(response.data);
+        const response = await axios.get('http://192.168.0.102:3500/user/getprods');
+        const fetchedProducts = response.data;
+
+        const newPriceMap: Record<string, number> = {};
+        for (const product of fetchedProducts) {
+          const predictedPrice = await fetchPredictedPrice(product.name);
+          if (predictedPrice !== null) {
+            newPriceMap[product._id] = predictedPrice;
+          }
+        }
+
+        setPriceMap(newPriceMap);
+        setProducts(fetchedProducts);
+        setFilteredProducts(fetchedProducts);
       } catch (error) {
-        console.error("Error fetching data:", error);
+        console.error("Error fetching products:", error);
       } finally {
         setLoading(false);
       }
     };
 
-    getUserIdAndProducts();
+    getProductsWithPredictions();
   }, []);
 
   useEffect(() => {
-    let filtered = products;
-    
-    // First filter by category if one is selected
+    let filtered = [...products];
+
     if (selectedCategory !== 'All') {
-      filtered = filtered.filter(product => 
-        product.category === selectedCategory
-      );
+      filtered = filtered.filter(product => product.category === selectedCategory);
     }
-    
-    // Then filter by search query
+
     filtered = filtered.filter(product =>
       product.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
-    
+
     setFilteredProducts(filtered);
   }, [searchQuery, products, selectedCategory]);
 
   const handleAddToCart = async (productId: string) => {
     try {
-      const response = await axios.post('http://192.168.43.112:3500/user/addtocart', {
+      await axios.post('http://192.168.0.102:3500/user/addtocart', {
         userId: "67c47725b322f61f7b759d9e",
         productId,
         quantity: 1
@@ -105,32 +109,29 @@ export default function Shop() {
         {/* Search */}
         <View style={styles.searchContainer}>
           <Ionicons name="search-outline" size={20} color="#181725" style={styles.searchIcon} />
-          <TextInput 
-            placeholder="Search fresh produce, grains..." 
-            style={styles.searchInput} 
+          <TextInput
+            placeholder="Search fresh produce, grains..."
+            style={styles.searchInput}
             placeholderTextColor="#7C7C7C"
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
         </View>
 
-        {/* Categories Section */}
+        {/* Categories */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Categories</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoriesScroll}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[styles.categoryCard, selectedCategory === 'All' && styles.selectedCategory]}
               onPress={() => setSelectedCategory('All')}
             >
-              <Image 
-                source={{uri: 'https://cdn.pixabay.com/photo/2024/05/19/18/22/fruit-8773085_1280.jpg'}}
-                style={styles.categoryImage}
-              />
+              <Image source={{ uri: 'https://cdn.pixabay.com/photo/2024/05/19/18/22/fruit-8773085_1280.jpg' }} style={styles.categoryImage} />
               <Text style={styles.categoryName}>All</Text>
             </TouchableOpacity>
-            {categories.map((category) => (
-              <TouchableOpacity 
-                key={category.id} 
+            {categories.map(category => (
+              <TouchableOpacity
+                key={category.id}
                 style={[styles.categoryCard, selectedCategory === category.name && styles.selectedCategory]}
                 onPress={() => setSelectedCategory(category.name)}
               >
@@ -141,7 +142,7 @@ export default function Shop() {
           </ScrollView>
         </View>
 
-        {/* Products Section */}
+        {/* Products */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>
             {selectedCategory === 'All' ? 'All Products' : selectedCategory}
@@ -150,17 +151,16 @@ export default function Shop() {
             <ActivityIndicator size="large" color="#53B175" />
           ) : (
             <View style={styles.productsGrid}>
-              {filteredProducts.map((product) => (
+              {filteredProducts.map(product => (
                 <TouchableOpacity key={product._id} style={styles.productCard}>
                   <Image source={{ uri: product.image }} style={styles.productImage} />
                   <Text style={styles.productName}>{product.name}</Text>
                   <Text style={styles.productUnit}>{product.unit}</Text>
                   <View style={styles.productBottom}>
-                    <Text style={styles.productPrice}>₹{product.price?.toFixed(2) || '0.00'}</Text>
-                    <TouchableOpacity 
-                      style={styles.addButton}
-                      onPress={() => handleAddToCart(product._id)}
-                    >
+                    <Text style={styles.productPrice}>
+                      ₹{priceMap[product._id]?.toFixed(2) || '0.00'}
+                    </Text>
+                    <TouchableOpacity style={styles.addButton} onPress={() => handleAddToCart(product._id)}>
                       <Ionicons name="add" size={20} color="#FFF" />
                     </TouchableOpacity>
                   </View>

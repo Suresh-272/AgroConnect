@@ -12,6 +12,8 @@ router.post('/removecart', userController.removeFromCart);
 router.post('/addquantity', userController.updateCartQuantity)
 // create order
 router.post('/create', orderController.createOrder);
+// get orders for farmer
+router.get('/farmerorders', orderController.getFarmerOrders);
 //get acc details
 router.post('/acc', userController.getAccountDetails);
 //add address

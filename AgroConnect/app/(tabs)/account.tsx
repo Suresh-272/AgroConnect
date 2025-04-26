@@ -47,7 +47,7 @@ export default function Account() {
   useEffect(() => {
     const fetchUserDetails = async () => {
       try {
-        const response = await axios.post('http://192.168.43.112:3500/user/acc', {
+        const response = await axios.post('http://192.168.0.102:3500/user/acc', {
           userId: "67c47725b322f61f7b759d9e" // Replace with actual user ID from auth
         });
         
@@ -79,7 +79,7 @@ export default function Account() {
         return;
       }
 
-      const response = await axios.post('http://192.168.43.112:3500/user/address', {
+      const response = await axios.post('http://192.168.0.102:3500/user/address', {
         userId: "67c47725b322f61f7b759d9e",
         type: addressForm.type,
         address: addressForm.address,
