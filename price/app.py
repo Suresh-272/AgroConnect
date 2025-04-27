@@ -333,8 +333,13 @@ def CurrentMonth(name):
             commodity = i
             break
     current_wpi = commodity.getPredictedValue([float(current_month), current_year, current_rainfall])
-    current_price = (base[name.capitalize()]*current_wpi)/100
-    return current_price
+    current_price_per_ton = (base[name.capitalize()] * current_wpi) / 100
+    
+    # Convert to per kg
+    current_price_per_kg = current_price_per_ton / 100
+    
+    return current_price_per_kg
+
 
 def TwelveMonthsForecast(name):
     current_month = datetime.now().month

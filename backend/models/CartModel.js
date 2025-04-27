@@ -6,6 +6,7 @@ const CartSchema = new mongoose.Schema({
     {
       productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
       quantity: { type: Number, required: true, min: 1 },
+      price: { type: Number, required: true }, // ✅ make sure you have price field required
     }
   ],
   totalPrice: { type: Number, required: true, default: 0 }

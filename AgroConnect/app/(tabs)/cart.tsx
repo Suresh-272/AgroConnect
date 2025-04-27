@@ -59,22 +59,48 @@ export default function Cart() {
   const [showWebView, setShowWebView] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
+  const fetchPredictedPrice = async (commodityName: string) => {
+    try {
+      const response = await axios.get(`http://172.20.10.5:5000/api/commodity/${commodityName.toLowerCase()}`);
+      return response.data.current_price;
+    } catch (error) {
+      console.error(`Error fetching price for ${commodityName}:`, error);
+      return null;
+    }
+  };
+  
   const fetchCart = async () => {
     try {
-      const response = await axios.post('http://192.168.0.102:3500/user/getcart', {
+      const response = await axios.post('http://172.20.10.5:3500/user/getcart', {
         userId: "67c47725b322f61f7b759d9e"
       });
-      setCart(response.data);
+      const cartData = response.data;
+  
+      // Now update each item's price from the Python API
+      const updatedItems = await Promise.all(
+        cartData.items.map(async (item: any) => {
+          const predictedPrice = await fetchPredictedPrice(item.productId.name);
+          return {
+            ...item,
+            predictedPrice: predictedPrice !== null ? predictedPrice : item.productId.price,
+          };
+        })
+      );
+  
+      // Set the updated cart
+      setCart({ ...cartData, items: updatedItems });
+  
     } catch (error) {
       console.error('Error fetching cart:', error);
     } finally {
       setLoading(false);
     }
   };
+  
 
   const handleUpdateQuantity = async (productId: string, action: 'increase' | 'decrease') => {
     try {
-      const response = await axios.post('http://192.168.0.102:3500/user/addquantity', {
+      const response = await axios.post('http://172.20.10.5:3500/user/addquantity', {
         userId: "67c47725b322f61f7b759d9e",
         productId,
         action
@@ -91,7 +117,7 @@ export default function Cart() {
   const handlePayment = async () => {
     try {
       // Create order
-      const orderResponse = await axios.post('http://192.168.0.102:3500/payment/create-order', {
+      const orderResponse = await axios.post('http://172.20.10.5:3500/payment/create-order', {
         amount: total,
         currency: 'INR'
       });
@@ -137,7 +163,7 @@ export default function Cart() {
       setIsLoading(true);
 
       // Verify payment
-      const verificationResponse = await axios.post('http://192.168.0.102:3500/payment/verify-payment', {
+      const verificationResponse = await axios.post('http://172.20.10.5:3500/payment/verify-payment', {
         razorpay_order_id: response.razorpay_order_id,
         razorpay_payment_id: response.razorpay_payment_id,
         razorpay_signature: response.razorpay_signature
@@ -157,7 +183,7 @@ export default function Cart() {
         };
 
         // Create order using the order endpoint
-        const orderResponse = await axios.post('http://192.168.0.102:3500/user/create', orderData);
+        const orderResponse = await axios.post('http://172.20.10.5:3500/user/create', orderData);
 
         if (orderResponse.data.order) {
           Alert.alert('Success', 'Payment successful and order created!');
@@ -231,7 +257,7 @@ export default function Cart() {
             <Image source={{ uri: item.productId.image }} style={styles.itemImage} />
             <View style={styles.itemInfo}>
               <Text style={styles.itemName}>{item.productId.name}</Text>
-              <Text style={styles.itemPrice}>₹{(item.productId.price || 0).toFixed(2)}</Text>
+              <Text style={styles.itemPrice}>₹{(item.predictedPrice || 0).toFixed(2)}</Text>
             </View>
             <View style={styles.quantityContainer}>
               <TouchableOpacity 
@@ -263,7 +289,7 @@ export default function Cart() {
         </View>
         <View style={[styles.summaryRow, styles.totalRow]}>
           <Text style={styles.totalLabel}>Total</Text>
-          <Text style={styles.totalValue}>₹{total}</Text>
+          <Text style={styles.totalValue}>₹{total.toFixed(2)}</Text>
         </View>
         <TouchableOpacity style={styles.checkoutButton} onPress={handlePayment}>
           <Text style={styles.checkoutButtonText}>Proceed to Payment</Text>
@@ -307,7 +333,7 @@ export default function Cart() {
                             razorpay_signature: response.razorpay_signature
                           }));
                         };
-                        
+
                         options.modal = {
                           ondismiss: function() {
                             window.ReactNativeWebView.postMessage(JSON.stringify({
@@ -315,15 +341,15 @@ export default function Cart() {
                             }));
                           }
                         };
-                        
+
                         const rzp = new Razorpay(options);
-                        
+
                         rzp.on('payment.failed', function(response) {
                           window.ReactNativeWebView.postMessage(JSON.stringify({
                             error: response.error
                           }));
                         });
-                        
+
                         // Start payment automatically
                         setTimeout(function() {
                           rzp.open();

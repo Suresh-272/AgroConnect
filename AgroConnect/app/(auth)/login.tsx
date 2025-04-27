@@ -24,7 +24,7 @@ export default function Login() {
     }
 
     try {
-      const response = await axios.post('http://192.168.0.102:3500/auth/login', {
+      const response = await axios.post('http://172.20.10.5:3500/auth/login', {
         mobileno,
         password,
       });

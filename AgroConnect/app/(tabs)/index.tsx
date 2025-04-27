@@ -34,7 +34,7 @@ export default function Shop() {
 
   const fetchPredictedPrice = async (commodityName: string) => {
     try {
-      const response = await axios.get<PredictionResponse>(`http://192.168.0.102:5000/api/commodity/${commodityName.toLowerCase()}`);
+      const response = await axios.get<PredictionResponse>(`http://172.20.10.5:5000/api/commodity/${commodityName.toLowerCase()}`);
       return response.data.current_price;
     } catch (error) {
       console.error(`Error fetching prediction for ${commodityName}:`, error);
@@ -45,7 +45,7 @@ export default function Shop() {
   useEffect(() => {
     const getProductsWithPredictions = async () => {
       try {
-        const response = await axios.get('http://192.168.0.102:3500/user/getprods');
+        const response = await axios.get('http://172.20.10.5:3500/user/getprods');
         const fetchedProducts = response.data;
 
         const newPriceMap: Record<string, number> = {};
@@ -84,18 +84,35 @@ export default function Shop() {
   }, [searchQuery, products, selectedCategory]);
 
   const handleAddToCart = async (productId: string) => {
-    try {
-      await axios.post('http://192.168.0.102:3500/user/addtocart', {
-        userId: "67c47725b322f61f7b759d9e",
-        productId,
-        quantity: 1
-      });
-      Alert.alert('Success', 'Product added to cart!');
-    } catch (error) {
-      console.error("Error adding to cart:", error);
-      Alert.alert('Error', 'Failed to add product to cart');
+  try {
+    const product = products.find(prod => prod._id === productId);
+    if (!product) {
+      Alert.alert('Error', 'Product not found!');
+      return;
     }
-  };
+
+    // Fetch the latest predicted price from Python API
+    const predictedPrice = await fetchPredictedPrice(product.name);
+    if (predictedPrice === null) {
+      Alert.alert('Error', 'Failed to fetch latest price!');
+      return;
+    }
+
+    // Now, call your backend (Node.js) and send the price also
+    await axios.post('http://172.20.10.5:3500/user/addtocart', {
+      userId: "67c47725b322f61f7b759d9e",
+      productId,
+      quantity: 1,
+      price: predictedPrice  // <-- send the fresh price
+    });
+
+    Alert.alert('Success', 'Product added to cart with updated price!');
+  } catch (error) {
+    console.error("Error adding to cart:", error);
+    Alert.alert('Error', 'Failed to add product to cart');
+  }
+};
+
 
   return (
     <SafeAreaView style={styles.container}>

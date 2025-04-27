@@ -2,6 +2,7 @@ const Product = require('../models/ProductModel');
 const Cart = require('../models/CartModel');
 const UserModel = require("../models/UserModel");
 const OrderModel = require("../models/OrderModel");
+const axios = require('axios');
 // Add a new product
 const addProduct = async (req, res) => {
     try {
@@ -29,151 +30,169 @@ const getAllProducts = async (req, res) => {
 };
 
 // Add to Cart
-const addToCart = async (req, res) => {
+// Function to fetch the predicted price from Python API
+const fetchPredictedPrice = async (commodityName) => {
     try {
-        const { userId, productId, quantity } = req.body;
-
-        let cart = await Cart.findOne({ userId });
-        const product = await Product.findById(productId);
-        if (!product) return res.status(404).json({ message: 'Product not found' });
-
-        if (!cart) {
-            cart = new Cart({ userId, items: [], totalPrice: 0 });
-        }
-
-        const itemIndex = cart.items.findIndex(item => item.productId.toString() === productId);
-        if (itemIndex > -1) {
-            cart.items[itemIndex].quantity += quantity;
-        } else {
-            cart.items.push({ productId, quantity });
-        }
-
-        // Calculate total price dynamically
-        let totalPrice = 0;
-        for (let item of cart.items) {
-            const itemProduct = await Product.findById(item.productId);
-            if (itemProduct) {
-                totalPrice += itemProduct.price * item.quantity;
-            }
-        }
-        cart.totalPrice = totalPrice;
-
-        await cart.save();
-        
-        res.json(cart);
+      const response = await axios.get(`http://172.20.10.5:5000/api/commodity/${commodityName.toLowerCase()}`);
+      return response.data.current_price;
     } catch (error) {
-        res.status(500).json({ error: error.message });
+      console.error(`Error fetching prediction for ${commodityName}:`, error);
+      return null;
     }
-};
+  };
   
+  // Add to Cart
+const addToCart = async (req, res) => {
+  try {
+    const { userId, productId, quantity } = req.body;
+
+    let cart = await Cart.findOne({ userId });
+
+    const product = await Product.findById(productId);
+    if (!product) return res.status(404).json({ message: 'Product not found' });
+
+    // Fetch predicted price
+    const predictedPrice = await fetchPredictedPrice(product.name.toLowerCase());
+    if (predictedPrice === null) return res.status(500).json({ message: 'Failed to fetch predicted price' });
+
+    if (!cart) {
+      cart = new Cart({ userId, items: [], totalPrice: 0 });
+    }
+
+    const itemIndex = cart.items.findIndex(item => item.productId.toString() === productId);
+
+    if (itemIndex > -1) {
+      cart.items[itemIndex].quantity += quantity;
+      cart.items[itemIndex].price = predictedPrice; // Update predicted price if needed
+    } else {
+      cart.items.push({
+        productId,
+        quantity,
+        price: predictedPrice,
+      });
+    }
+
+    // Calculate total price based on cart item prices
+    cart.totalPrice = parseFloat(
+      cart.items.reduce((sum, item) => sum + item.price * item.quantity, 0).toFixed(2)
+    );
+
+    await cart.save();
+    res.json(cart);
+  } catch (error) {
+    console.error('Error in addToCart:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
 // Get Cart
 const getCart = async (req, res) => {
-    try {
-        const { userId } = req.body;
-        const cart = await Cart.findOne({ userId }).populate('items.productId');
-        
-        // Calculate total price dynamically
-        let totalPrice = 0;
-        for (let item of cart.items) {
-            if (item.productId) {
-                totalPrice += item.productId.price * item.quantity;
-            }
-        }
-        cart.totalPrice = totalPrice;
-        await cart.save();
-        
-        res.json(cart);
-    } catch (error) {
-        res.status(500).json({ error: error.message });
+  try {
+    const { userId } = req.body;
+    const cart = await Cart.findOne({ userId }).populate('items.productId');
+
+    if (!cart) {
+      return res.status(404).json({ message: "Cart not found" });
     }
+
+    let totalPrice = 0;
+
+    // Fetch updated predicted prices for all products in the cart
+    for (let item of cart.items) {
+      if (item.productId) {
+        const predictedPrice = await fetchPredictedPrice(item.productId.name);
+        if (predictedPrice !== null) {
+          item.price = predictedPrice; // Update item's price with the latest predicted price
+        }
+      }
+      totalPrice += item.price * item.quantity; // Use updated price for total calculation
+    }
+
+    cart.totalPrice = parseFloat(totalPrice.toFixed(2));
+
+    await cart.save(); // Save updated prices
+    res.json(cart);
+  } catch (error) {
+    console.error('Error in getCart:', error);
+    res.status(500).json({ error: error.message });
+  }
 };
+
 
 // Update Cart Item Quantity
 const updateCartQuantity = async (req, res) => {
-    try {
-        const { userId, productId, action } = req.body;
+  try {
+    const { userId, productId, action } = req.body;
 
-        if (!userId || !productId || !action) {
-            return res.status(400).json({ error: "Missing required fields" });
-        }
-
-        let cartItem = await Cart.findOne({ userId, "items.productId": productId });
-
-        if (!cartItem) {
-            return res.status(404).json({ error: "Product not found in cart" });
-        }
-
-        const itemIndex = cartItem.items.findIndex(item => item.productId.toString() === productId);
-        if (itemIndex === -1) {
-            return res.status(404).json({ error: "Product not found in cart" });
-        }
-
-        // Update quantity based on action
-        if (action === "increase") {
-            cartItem.items[itemIndex].quantity += 1;
-        } else if (action === "decrease") {
-            if (cartItem.items[itemIndex].quantity > 1) {
-                cartItem.items[itemIndex].quantity -= 1;
-            } else {
-                // Remove item if quantity is 0
-                cartItem.items.splice(itemIndex, 1);
-            }
-        }
-
-        // Calculate total price dynamically
-        let totalPrice = 0;
-        for (let item of cartItem.items) {
-            const product = await Product.findById(item.productId);
-            if (product) {
-                totalPrice += product.price * item.quantity;
-            }
-        }
-        cartItem.totalPrice = totalPrice;
-
-        await cartItem.save();
-
-        return res.json({ message: "Cart updated successfully", cart: cartItem });
-    } catch (error) {
-        console.error("Error updating cart:", error);
-        return res.status(500).json({ error: "Internal server error" });
+    if (!userId || !productId || !action) {
+      return res.status(400).json({ error: "Missing required fields" });
     }
+
+    let cart = await Cart.findOne({ userId });
+    if (!cart) {
+      return res.status(404).json({ error: "Cart not found" });
+    }
+
+    const itemIndex = cart.items.findIndex(item => item.productId.toString() === productId);
+    if (itemIndex === -1) {
+      return res.status(404).json({ error: "Product not found in cart" });
+    }
+
+    if (action === "increase") {
+      cart.items[itemIndex].quantity += 1;
+    } else if (action === "decrease") {
+      if (cart.items[itemIndex].quantity > 1) {
+        cart.items[itemIndex].quantity -= 1;
+      } else {
+        cart.items.splice(itemIndex, 1);
+      }
+    } else {
+      return res.status(400).json({ error: "Invalid action" });
+    }
+
+    // Calculate total price based on stored item.price
+    cart.totalPrice = parseFloat(
+      cart.items.reduce((sum, item) => sum + item.price * item.quantity, 0).toFixed(2)
+    );
+
+    await cart.save();
+    return res.json({ message: "Cart updated successfully", cart });
+  } catch (error) {
+    console.error("Error updating cart:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
 };
-  
+
 // Remove from Cart
 const removeFromCart = async (req, res) => {
-    try {
-        const { userId, productId } = req.body;
+  try {
+    const { userId, productId } = req.body;
 
-        let cart = await Cart.findOne({ userId });
-        if (!cart) {
-            return res.status(404).json({ error: "Cart not found" });
-        }
-
-        // Find index of the product in cart
-        const itemIndex = cart.items.findIndex(item => item.productId.toString() === productId);
-        if (itemIndex === -1) {
-            return res.status(404).json({ error: "Product not found in cart" });
-        }
-
-        // Remove item from cart
-        cart.items.splice(itemIndex, 1);
-
-        // Calculate total price dynamically
-        let totalPrice = 0;
-        for (let item of cart.items) {
-            const product = await Product.findById(item.productId);
-            if (product) {
-                totalPrice += product.price * item.quantity;
-            }
-        }
-        cart.totalPrice = totalPrice;
-
-        await cart.save();
-        res.json({ message: "Product removed from cart", cart });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
+    let cart = await Cart.findOne({ userId });
+    if (!cart) {
+      return res.status(404).json({ error: "Cart not found" });
     }
-}
+
+    const itemIndex = cart.items.findIndex(item => item.productId.toString() === productId);
+    if (itemIndex === -1) {
+      return res.status(404).json({ error: "Product not found in cart" });
+    }
+
+    cart.items.splice(itemIndex, 1);
+
+    // Calculate total price based on stored item.price
+    cart.totalPrice = parseFloat(
+      cart.items.reduce((sum, item) => sum + item.price * item.quantity, 0).toFixed(2)
+    );
+
+    await cart.save();
+    res.json({ message: "Product removed from cart", cart });
+  } catch (error) {
+    console.error("Error removing product from cart:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
 
 // get acc details
 const getAccountDetails = async (req, res) => {
